@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { useT } from "../../../shared/i18n/useT";
 
 export type MarkdownViewMode = "preview" | "source";
 
@@ -31,19 +32,20 @@ type ToggleProps = {
 };
 
 export function MarkdownModeToggle({ mode, onChange }: ToggleProps) {
+  const t = useT();
   return (
     <div
       role="tablist"
-      aria-label="Markdown view"
+      aria-label={t("sessions.mdPreview.view")}
       className="flex rounded-md border border-content/10 bg-content/10 p-0.5 backdrop-blur-md"
     >
       <ModeTab
-        label="Preview"
+        label={t("sessions.mdPreview.preview")}
         selected={mode === "preview"}
         onSelect={() => onChange("preview")}
       />
       <ModeTab
-        label="Source"
+        label={t("sessions.mdPreview.source")}
         selected={mode === "source"}
         onSelect={() => onChange("source")}
       />
