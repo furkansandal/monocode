@@ -1,3 +1,4 @@
+import { t } from "../../../../shared/i18n/locale";
 import { TurnNotReadyError } from "../../core/types";
 import { nativeModelId } from "../../../../features/sessions/model/models";
 import { sameProviderAccountId } from "../../../../features/providers/model/providerAccounts";
@@ -188,7 +189,7 @@ export async function compactCodexContext(
   input: CompactContextInput,
 ): Promise<void> {
   if (input.ephemeral && !hasLiveCodexSession(input.sessionId, true)) {
-    throw new Error("Send a message before compacting this chat");
+    throw new Error(t("integrations.codex.compactNeedsMessage"));
   }
   let live: Live;
   try {
@@ -234,7 +235,7 @@ export async function rewindCodexLastTurn(
   live.onEvent = input.onEvent;
   await live.turns;
   if (live.activeTurnId) {
-    throw new Error("Stop the current turn before editing the last message");
+    throw new Error(t("integrations.turn.stopBeforeEdit"));
   }
 
   const beforeTurnId = await lastUserTurnId(live, input.providerTurnId);
@@ -360,7 +361,9 @@ export function respondCodexQuestion(
       if (live.questions.get(requestId) !== pending) return;
       live.onEvent({
         type: "status",
-        text: `Could not send your answer to Codex: ${error instanceof Error ? error.message : String(error)}`,
+        text: t("integrations.codex.answerSendFailed", {
+          error: error instanceof Error ? error.message : String(error),
+        }),
       });
     });
 }
@@ -713,9 +716,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
         didResume = true;
       } catch (error) {
         if (store?.hasThread)
-          throw new Error(
-            "The saved Mono Codex context could not be resumed. Retry to keep its saved context.",
-          );
+          throw new Error(t("integrations.codex.monoContextResumeFailed"));
         if (!isRecoverableThreadResumeError(error)) throw error;
         threadId = undefined;
       }
@@ -1118,9 +1119,9 @@ async function materializeGeneratedImage(
     }
     live.onEvent({
       type: "session.error",
-      message: `Could not save generated image: ${
-        cause instanceof Error ? cause.message : String(cause)
-      }`,
+      message: t("integrations.codex.imageSaveFailed", {
+        error: cause instanceof Error ? cause.message : String(cause),
+      }),
     });
   }
 }
@@ -1437,7 +1438,7 @@ async function handleServerRequest(
       if (!live.cancelled && !live.muteUpdates)
         live.onEvent({
           type: "status",
-          text: "This MCP server requested a form or browser sign-in that MonoCode does not support yet. Complete it in the server's own interface.",
+          text: t("integrations.codex.mcpSignInUnsupported"),
         });
       await live.rpc.respond(id, {
         action: "cancel",
@@ -1480,7 +1481,7 @@ async function handleServerRequest(
     // An empty success or invented denial hides protocol incompatibility.
     live.onEvent({
       type: "status",
-      text: `Unsupported Codex request: ${method}`,
+      text: t("integrations.codex.unsupportedRequest", { method }),
     });
     await live.rpc.respondError(id, {
       code: -32601,
