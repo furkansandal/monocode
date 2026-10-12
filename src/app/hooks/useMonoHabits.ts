@@ -1,15 +1,12 @@
 import { useEffect, useRef } from "react";
+import { t } from "../../shared/i18n/locale";
 import type { ControlOutcome } from "../../features/orchestration/model/orchestration";
 import {
   newSession,
   type Block,
   type Session,
 } from "../../features/sessions/model/session";
-import {
-  findMono,
-  listMonos,
-  monoLook,
-} from "../../features/monos/model/mono";
+import { findMono, listMonos, monoLook } from "../../features/monos/model/mono";
 import { loadMonoFiles } from "../../features/monos/model/monoFiles";
 import {
   artifactCards,
@@ -130,8 +127,8 @@ async function watchRun(
         text: "",
         error:
           waiting >= HABIT_APPROVAL_WAIT_MS
-            ? "Nobody answered its approval request."
-            : "It took too long and was stopped.",
+            ? t("app.habits.approvalUnanswered")
+            : t("app.habits.timedOut"),
       };
   }
   return settled;
@@ -228,7 +225,7 @@ export function useMonoHabits(host: MonoHabitHost, enabled = true) {
                       ? "posted"
                       : "quiet",
                 ...(outcome.status !== "completed"
-                  ? { error: outcome.error ?? "The run did not finish." }
+                  ? { error: outcome.error ?? t("app.habits.runUnfinished") }
                   : {}),
                 ...(report ? { report } : {}),
                 startedAt: now,
