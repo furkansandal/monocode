@@ -22,6 +22,7 @@ import type { PiFlavor } from "./piFlavor";
 import { PiRpc } from "./piClient";
 import { piSubagentEvents } from "./piSubagents";
 import {
+  addPiTurnUsage,
   agentEndWillRetry,
   asRecord,
   assistantDeltaFromEvent,
@@ -30,7 +31,6 @@ import {
   buildPiSteer,
   contextFromSessionStats,
   contextFromUsage,
-  turnMetricsFromUsage,
   extensionUiResponse,
   extensionUiTitle,
   forkMessagesFromRpcData,
@@ -58,6 +58,7 @@ import {
   tryParseJsonRecord,
   turnErrorFromEvent,
   type PiExtensionUiRequest,
+  type PiTurnUsage,
 } from "./piProtocol";
 import type {
   ApprovalDecision,
@@ -120,6 +121,7 @@ type Live = {
   emittedReasoning: string;
   /** Reason the turn failed, held until we know it is not being retried. */
   turnError: string | null;
+  turnUsage: PiTurnUsage;
 };
 
 type Resume = {
@@ -527,6 +529,7 @@ async function startLive(
     emittedAssistant: "",
     emittedReasoning: "",
     turnError: null,
+    turnUsage: { done: {}, open: {} },
   };
   liveRef.current = live;
 
@@ -602,6 +605,7 @@ async function runTurn(
   live.emittedAssistant = "";
   live.emittedReasoning = "";
   live.turnError = null;
+  live.turnUsage = { done: {}, open: {} };
   live.toolsByIndex.clear();
   live.toolsById.clear();
   live.compacting = false;
@@ -869,7 +873,7 @@ function handleFrame(
 
   const context = contextFromUsage(rec, live.contextWindow);
   if (context) live.onEvent({ type: "context", ...context });
-  const metrics = turnMetricsFromUsage(rec);
+  const metrics = addPiTurnUsage(live.turnUsage, rec);
   if (metrics) live.onEvent({ type: "turn.metrics", ...metrics });
 
   const delta = assistantDeltaFromEvent(rec);

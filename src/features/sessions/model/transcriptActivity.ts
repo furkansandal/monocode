@@ -179,6 +179,10 @@ export function isProseBlock(block: Block): boolean {
   return block.role === "assistant" && !!block.text.trim();
 }
 
+export function hasReadableText(text: string): boolean {
+  return /[^\s\p{P}]/u.test(text);
+}
+
 /** First paragraph of a folded prose block, stripped to one plain line. */
 export function proseSummary(text: string): string {
   const body = text.replace(/```[\s\S]*?(?:```|$)/g, " ");
@@ -1125,12 +1129,13 @@ export function activityPhaseTitle(phase: ActivityPhase, live = false): string {
   if (failure) return failure;
   if (phase.headline) {
     const summary = proseSummary(phase.headline.text);
-    if (summary) return summary;
-    return t(
-      phase.headline.role === "reasoning"
-        ? "sessions.activity.thinking"
-        : "sessions.activity.working",
-    );
+    if (hasReadableText(summary)) return summary;
+    if (!summary)
+      return t(
+        phase.headline.role === "reasoning"
+          ? "sessions.activity.thinking"
+          : "sessions.activity.working",
+      );
   }
   return workSummaryLine(phase.steps, live);
 }
