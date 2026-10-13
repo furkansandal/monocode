@@ -1187,6 +1187,109 @@ fn apply_provider_account(
     Ok(())
 }
 
+/// The config directory Claude keeps one account's transcripts in. The default
+/// account resolves the way the CLI does when no profile is set.
+pub(crate) fn claude_config_dir(
+    app: &AppHandle,
+    account_id: Option<&str>,
+) -> Result<PathBuf, String> {
+    match account_id.filter(|id| *id != DEFAULT_PROVIDER_ACCOUNT_ID) {
+        Some(id) => provider_account_path(app, "claude", id),
+        None => match std::env::var_os("CLAUDE_CONFIG_DIR") {
+            Some(path) => Ok(PathBuf::from(path)),
+            None => Ok(
+                PathBuf::from(dirs_home().ok_or("Home directory is unavailable")?).join(".claude"),
+            ),
+        },
+    }
+}
+
+/// Copy one Claude conversation between account config directories, with its
+/// side folder of tool results and subagent logs, so `claude --resume <id>`
+/// under the target account continues it. Returns `false` when the source
+/// holds no transcript for the session.
+fn copy_claude_transcript(
+    from_config: &Path,
+    to_config: &Path,
+    session_id: &str,
+) -> Result<bool, String> {
+    let transcript_name = format!("{session_id}.jsonl");
+    let Some(project) = std::fs::read_dir(from_config.join("projects"))
+        .ok()
+        .and_then(|projects| {
+            projects
+                .flatten()
+                .map(|project| project.path())
+                .find(|project| project.join(&transcript_name).is_file())
+        })
+    else {
+        return Ok(false);
+    };
+    let Some(project_name) = project.file_name() else {
+        return Ok(false);
+    };
+    let target = to_config.join("projects").join(project_name);
+    std::fs::create_dir_all(&target).map_err(|error| {
+        format!(
+            "Could not create the Claude project folder {}: {error}",
+            target.display()
+        )
+    })?;
+    std::fs::copy(
+        project.join(&transcript_name),
+        target.join(&transcript_name),
+    )
+    .map_err(|error| format!("Could not copy the Claude transcript: {error}"))?;
+    let side_folder = project.join(session_id);
+    if side_folder.is_dir() {
+        copy_dir_all(&side_folder, &target.join(session_id))?;
+    }
+    Ok(true)
+}
+
+fn copy_dir_all(from: &Path, to: &Path) -> Result<(), String> {
+    std::fs::create_dir_all(to).map_err(|error| error.to_string())?;
+    for entry in std::fs::read_dir(from).map_err(|error| error.to_string())? {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let source = entry.path();
+        let target = to.join(entry.file_name());
+        if source.is_dir() {
+            copy_dir_all(&source, &target)?;
+        } else {
+            std::fs::copy(&source, &target).map_err(|error| error.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+/// Hand a Claude conversation to the account its next request will use. The
+/// transcript moves as it is: nothing is compacted or summarized.
+#[tauri::command]
+pub async fn claude_transfer_transcript(
+    app: AppHandle,
+    session_id: String,
+    from_account_id: Option<String>,
+    to_account_id: Option<String>,
+) -> Result<bool, String> {
+    if session_id.is_empty()
+        || !session_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+    {
+        return Err("Invalid Claude provider session id".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let from = claude_config_dir(&app, from_account_id.as_deref())?;
+        let to = claude_config_dir(&app, to_account_id.as_deref())?;
+        if from == to {
+            return Ok(true);
+        }
+        copy_claude_transcript(&from, &to, &session_id)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
 /// A child that stops draining stdin can block `write_all` for minutes, so the
 /// write runs on the blocking pool — never on an async worker or the IPC path,
 /// where it would starve `harness_kill` and make the wedged child unrecoverable.
@@ -4232,5 +4335,55 @@ mod reap_logic_tests {
         assert!(!is_legacy_orphaned_cursor_acp(
             "node /usr/local/bin/typescript-language-server --stdio"
         ));
+    }
+}
+
+#[cfg(test)]
+mod claude_transfer_tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn tmp_dir(label: &str) -> PathBuf {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir =
+            std::env::temp_dir().join(format!("monocode-{label}-{}-{stamp}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn copies_transcript_and_side_folder_into_the_target_account() {
+        let from = tmp_dir("transfer-from");
+        let to = tmp_dir("transfer-to");
+        let project = from.join("projects").join("-repo");
+        std::fs::create_dir_all(project.join("sess_1/tool-results")).unwrap();
+        std::fs::write(project.join("sess_1.jsonl"), "{\"type\":\"user\"}\n").unwrap();
+        std::fs::write(project.join("sess_1/tool-results/out.txt"), "output").unwrap();
+
+        assert!(copy_claude_transcript(&from, &to, "sess_1").unwrap());
+
+        let target = to.join("projects").join("-repo");
+        assert_eq!(
+            std::fs::read_to_string(target.join("sess_1.jsonl")).unwrap(),
+            "{\"type\":\"user\"}\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(target.join("sess_1/tool-results/out.txt")).unwrap(),
+            "output"
+        );
+        let _ = std::fs::remove_dir_all(&from);
+        let _ = std::fs::remove_dir_all(&to);
+    }
+
+    #[test]
+    fn reports_no_transfer_when_the_source_has_no_transcript() {
+        let from = tmp_dir("transfer-missing");
+        let to = tmp_dir("transfer-missing-to");
+        assert!(!copy_claude_transcript(&from, &to, "sess_missing").unwrap());
+        let _ = std::fs::remove_dir_all(&from);
+        let _ = std::fs::remove_dir_all(&to);
     }
 }
