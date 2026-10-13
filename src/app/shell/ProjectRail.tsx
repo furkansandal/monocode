@@ -434,12 +434,7 @@ export function ProjectRail({
             }}
             className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-none pb-2"
           >
-            {monos ? (
-              <MonoRailSection
-                {...monos}
-                introAvailable={visible && !!monos.introAvailable}
-              />
-            ) : null}
+            {monos ? <MonoRailSection {...monos} /> : null}
 
             {sections.pinned.length > 0 ? (
               <ProjectSection

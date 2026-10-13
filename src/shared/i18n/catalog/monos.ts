@@ -252,6 +252,16 @@ export const en = {
   "monos.commit.unstageAll": "Unstage All Changes",
   "monos.commit.changes": "Changes",
   "monos.commit.stageAll": "Stage All Changes",
+  "monos.intro.showMonos": "Show monos",
+  "monos.intro.hideMonosTitle": "Hide monos from the rail. Turn them back on in Settings › Monos.",
+  "monos.intro.cardBody": "Agents of your own that work across your projects and run habits on their own.",
+  "monos.intro.createMono": "Create mono",
+  "monos.overview.hideActivity": "Hide activity",
+  "monos.overview.showActivity": "Show activity",
+  "monos.habit.startedSessions": {
+    one: "Started a session.",
+    other: "Started {count} sessions.",
+  },
 } as const;
 
 export const tr: Translations<typeof en> = {
@@ -504,4 +514,14 @@ export const tr: Translations<typeof en> = {
   "monos.commit.unstageAll": "Tüm değişiklikleri stage'den çıkar",
   "monos.commit.changes": "Değişiklikler",
   "monos.commit.stageAll": "Tüm değişiklikleri stage'le",
+  "monos.intro.showMonos": "Monoları göster",
+  "monos.intro.hideMonosTitle": "Monoları kenar çubuğundan gizle. Ayarlar › Monolar bölümünden yeniden açabilirsin.",
+  "monos.intro.cardBody": "Projelerinde çalışan ve alışkanlıklarını kendi başlarına yürüten kendi ajanların.",
+  "monos.intro.createMono": "Mono oluştur",
+  "monos.overview.hideActivity": "Etkinliği gizle",
+  "monos.overview.showActivity": "Etkinliği göster",
+  "monos.habit.startedSessions": {
+    one: "Bir oturum başlattı.",
+    other: "{count} oturum başlattı.",
+  },
 };

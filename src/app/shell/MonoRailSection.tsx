@@ -10,7 +10,8 @@ import { Popover, type PopoverAnchor } from "../../shared/ui/Popover";
 import { Shimmer } from "../../shared/ui/Shimmer";
 import { useAnimatedReorder } from "../../shared/hooks/useAnimatedReorder";
 import { MonoRailMascot } from "../../features/monos/ui/MonoRailMascot";
-import { MonoIntroPopover } from "../../features/monos/ui/MonoIntro";
+import { MonoIntroCard } from "../../features/monos/ui/MonoIntro";
+import { saveMonosEnabled } from "../../features/settings/model/settings";
 import { ProjectBackgroundDialog } from "../../features/projects/ui/ProjectBackgroundDialog";
 import { monoBackgroundKey } from "../../features/monos/model/monoBackground";
 import {
@@ -19,11 +20,9 @@ import {
 } from "../../features/monos/ui/monoPanelParts";
 import {
   defaultMonoName,
-  dismissMonoIntro,
   findMono,
   listMonos,
   MONO_STATUS_LABEL,
-  monoIntroDismissed,
   nextMonoLook,
   monoLook,
   monoProjectsPhrase,
@@ -48,8 +47,6 @@ export type MonoRailProps = {
   onOpen: (monoId: string) => void;
   onCreate: () => void;
   onDelete: (monoId: string) => void;
-  /** Whether the intro may show now, when there is no Mono yet. */
-  introAvailable?: boolean;
 };
 
 const IDLE: MonoState = { status: "idle" };
@@ -75,20 +72,27 @@ export function MonoRailSection({
   onOpen,
   onCreate,
   onDelete,
-  introAvailable = false,
 }: MonoRailProps) {
   const t = useT();
   const snapshot = useSyncExternalStore(subscribeMonos, monosSnapshot);
   const monos = useMemo(() => listMonos(), [snapshot]);
-  const [addButton, setAddButton] = useState<HTMLButtonElement | null>(null);
-  // Shown once ever, and only the user's choice puts it away.
-  const showIntro =
-    introAvailable && monos.length === 0 && !monoIntroDismissed();
   const ids = monos.map((mono) => mono.id);
   const sortable = useAnimatedReorder(ids, reorderMonos, "y");
   const [menu, setMenu] = useState<{ id: string; anchor: PopoverAnchor }>();
   const [background, setBackground] = useState<string>();
   const backgroundMono = background ? findMono(background) : undefined;
+
+  // With no Mono yet, the card stands in for the section.
+  if (monos.length === 0)
+    return (
+      <div className="mb-2 shrink-0" data-mono-rail>
+        <MonoIntroCard
+          look={nextMonoLook(monos)}
+          onCreate={onCreate}
+          onHide={() => saveMonosEnabled(false)}
+        />
+      </div>
+    );
 
   return (
     <div className="mb-2 shrink-0" data-mono-rail>
@@ -96,44 +100,17 @@ export function MonoRailSection({
         <span className="min-w-0 flex-1 truncate px-1 text-xs leading-5 text-content/50">
           {t("app.monoRail.title")}
         </span>
-        {/* With none yet, the row below is the way to add one. */}
-        {monos.length ? (
-          <button
-            type="button"
-            title={t("app.monoRail.newMono")}
-            aria-label={t("app.monoRail.newMono")}
-            onClick={onCreate}
-            className="grid size-5 shrink-0 place-items-center rounded-md text-content/50 hover:bg-content/8 hover:text-content"
-          >
-            <Plus className="size-3.5" strokeWidth={1.75} />
-          </button>
-        ) : null}
+        <button
+          type="button"
+          title={t("app.monoRail.newMono")}
+          aria-label={t("app.monoRail.newMono")}
+          onClick={onCreate}
+          className="grid size-5 shrink-0 place-items-center rounded-md text-content/50 hover:bg-content/8 hover:text-content"
+        >
+          <Plus className="size-3.5" strokeWidth={1.75} />
+        </button>
       </div>
-      {showIntro && addButton ? (
-        <MonoIntroPopover
-          anchor={addButton}
-          look={nextMonoLook(monos)}
-          onCreate={() => {
-            dismissMonoIntro();
-            onCreate();
-          }}
-          onLater={dismissMonoIntro}
-        />
-      ) : null}
       <div className="flex flex-col gap-px px-2">
-        {monos.length === 0 ? (
-          <button
-            ref={setAddButton}
-            type="button"
-            data-mono-add
-            title={t("app.monoRail.newMono")}
-            aria-label={t("app.monoRail.newMono")}
-            onClick={onCreate}
-            className="grid h-8 w-full cursor-default place-items-center rounded-md border border-dashed border-content/15 text-content/50 hover:border-content/30 hover:bg-content/5 hover:text-content"
-          >
-            <Plus className="size-3.5" strokeWidth={1.75} />
-          </button>
-        ) : null}
         {monos.map((mono) => {
           const look = monoLook(mono);
           const state = states.get(mono.id) ?? IDLE;
@@ -219,7 +196,7 @@ export function MonoRailSection({
                   <span
                     aria-hidden
                     data-mono-unread={unseen}
-                    className="grid h-4 min-w-4 shrink-0 place-items-center rounded-full bg-content/15 px-1 text-[10px] font-medium tabular-nums leading-none text-content/80 group-hover:hidden group-has-[:focus-visible]:hidden"
+                    className="grid h-4 min-w-4 shrink-0 place-items-center rounded-full bg-accent px-1 text-[10px] font-medium tabular-nums leading-none text-white group-hover:hidden group-has-[:focus-visible]:hidden"
                   >
                     {unreadBadge(unseen)}
                   </span>

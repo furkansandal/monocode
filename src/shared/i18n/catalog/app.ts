@@ -502,6 +502,9 @@ export const en = {
     "This chat is busy. Choose another chat or start a new one.",
   "app.ciRepair.sessionTitle": "Fix CI #{number}: {title}",
   "app.session.newRemote": "New remote session",
+  "app.sidebar.searchLabel": "Search",
+  "app.sidebar.settingsLabel": "Settings",
+  "app.sidebar.sessionsNewReplies": "Sessions, new replies",
 } as const;
 
 export const tr: Translations<typeof en> = {
@@ -1008,4 +1011,7 @@ export const tr: Translations<typeof en> = {
     "Bu sohbet meşgul. Başka bir sohbet seçin veya yenisini başlatın.",
   "app.ciRepair.sessionTitle": "CI'ı düzelt #{number}: {title}",
   "app.session.newRemote": "Yeni uzak oturum",
+  "app.sidebar.searchLabel": "Ara",
+  "app.sidebar.settingsLabel": "Ayarlar",
+  "app.sidebar.sessionsNewReplies": "Oturumlar, yeni yanıtlar",
 };

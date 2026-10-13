@@ -76,6 +76,11 @@ type Props = {
   variant?: Variant;
   /** Action label for recovery surfaces that open the same model chooser. */
   triggerLabel?: string;
+  /**
+   * Classes for the trigger's text, so a narrow surface can hide it and keep
+   * just the icon; the button's label still names the choice.
+   */
+  labelClassName?: string;
   onChange: (harness: HarnessId, model: string) => void;
   onSettingsChange: (settings: Record<string, string>) => void;
   onClose?: () => void;
@@ -316,6 +321,7 @@ export function ModelPicker({
   side = "top",
   variant = "pill",
   triggerLabel,
+  labelClassName = "",
   onChange,
   onSettingsChange,
   onClose,
@@ -781,13 +787,13 @@ export function ModelPicker({
           className={`${variant === "pill" ? "size-4" : "size-3.5"} shrink-0`}
         />
         <span
-          className={`whitespace-nowrap ${variant === "pill" ? "text-[11px]" : ""}`}
+          className={`whitespace-nowrap ${variant === "pill" ? "text-[11px]" : ""} ${labelClassName}`}
         >
           {triggerLabel ?? triggerModelName}
         </span>
         {!triggerLabel && triggerEffortLabel ? (
           <span
-            className={`shrink-0 text-content/50 ${variant === "pill" ? "text-[11px]" : ""}`}
+            className={`shrink-0 text-content/50 ${variant === "pill" ? "text-[11px]" : ""} ${labelClassName}`}
           >
             {triggerEffortLabel}
           </span>
@@ -1096,11 +1102,18 @@ export function ModelControlPills({
   model,
   values,
   variant = "pill",
+  labelClassName,
   onSettingsChange,
   onClose,
 }: Pick<
   Props,
-  "harness" | "model" | "values" | "variant" | "onSettingsChange" | "onClose"
+  | "harness"
+  | "model"
+  | "values"
+  | "variant"
+  | "labelClassName"
+  | "onSettingsChange"
+  | "onClose"
 >) {
   const catalogVersion = useSyncExternalStore(
     subscribeModels,
@@ -1139,6 +1152,7 @@ export function ModelControlPills({
             setting={setting}
             values={values}
             variant={variant}
+            labelClassName={labelClassName}
             onSettingsChange={onSettingsChange}
             onClose={onClose}
             additionalSettings={
@@ -1300,6 +1314,7 @@ function SelectPill({
   values,
   variant = "pill",
   side = "top",
+  labelClassName = "",
   onSettingsChange,
   onClose,
   additionalSettings,
@@ -1308,6 +1323,8 @@ function SelectPill({
   values: Record<string, string>;
   variant?: Variant;
   side?: "top" | "bottom";
+  /** Applies only beside an icon, so a hidden label never leaves a blank. */
+  labelClassName?: string;
   onSettingsChange: (settings: Record<string, string>) => void;
   onClose?: () => void;
   additionalSettings?: ModelSetting[];
@@ -1321,6 +1338,7 @@ function SelectPill({
   const value = settingValue(setting, values);
   const valueLabel = settingValueLabel(setting, values);
   const label = settingLabel(setting);
+  const iconic = isEffortSetting(setting) || setting.id === "serviceTier";
   const menuSettings = [setting, ...(additionalSettings ?? [])];
   const grouped = menuSettings.length > 1;
   const menuOptions = menuSettings.flatMap((menuSetting) =>
@@ -1375,7 +1393,7 @@ function SelectPill({
           <Zap className="size-3.5 shrink-0" strokeWidth={1.75} />
         ) : null}
         <span
-          className={`min-w-0 truncate ${variant === "pill" ? "text-[11px]" : ""}`}
+          className={`min-w-0 truncate ${variant === "pill" ? "text-[11px]" : ""} ${iconic ? labelClassName : ""}`}
         >
           {valueLabel}
         </span>

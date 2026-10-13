@@ -164,6 +164,7 @@ import { DevModeSlot, IconButton, TabVisitNav } from "./TitleBar";
 import { ProjectSearch } from "../../features/projects/ui/ProjectSearch";
 import { Popover } from "../../shared/ui/Popover";
 import { SearchableProjectPicker } from "../../features/projects/ui/SearchableProjectPicker";
+import { useRailTooltip } from "./RailTooltip";
 import { useProjectMenu } from "./useProjectMenu";
 import { SessionFiltersMenu } from "../../features/sessions/ui/SessionFiltersMenu";
 import { LinkSessionWorkItemDialog } from "../../features/sessions/ui/LinkSessionWorkItemDialog";
@@ -1688,6 +1689,9 @@ function SidebarComponent({
   const changeAdditions = changeStats?.additions ?? 0;
   const changeDeletions = changeStats?.deletions ?? 0;
   const hasChanges = (changeStats?.files ?? 0) > 0;
+  const hasUnseenFinished = listedSessions.some((session) =>
+    unseenFinishedIds.has(session.id),
+  );
   const hasChangeStats = changeAdditions > 0 || changeDeletions > 0;
   const changesLabel = hasChangeStats
     ? [
@@ -2328,7 +2332,10 @@ function SidebarComponent({
           activeTab={tab}
           tabShown={panelOpen}
           changesLabel={changesLabel}
+          changeAdditions={changeAdditions}
+          changeDeletions={changeDeletions}
           hasChanges={hasChanges}
+          hasUnseenFinished={hasUnseenFinished}
           inboxUnseen={inboxUnseen}
           onSelectProject={onSelectProject}
           onOpenProject={onOpenProject}
@@ -2583,7 +2590,10 @@ function CompactProjectRail({
   activeTab,
   tabShown,
   changesLabel,
+  changeAdditions,
+  changeDeletions,
   hasChanges,
+  hasUnseenFinished,
   inboxUnseen,
   onSelectProject,
   onOpenProject,
@@ -2612,7 +2622,11 @@ function CompactProjectRail({
   activeTab: SidebarTab;
   tabShown: boolean;
   changesLabel: string;
+  changeAdditions: number;
+  changeDeletions: number;
   hasChanges: boolean;
+  /** A session here finished a reply the user has not opened. */
+  hasUnseenFinished: boolean;
   inboxUnseen: boolean;
   onSelectProject?: (path: string) => void;
   onOpenProject?: () => void;
@@ -2674,11 +2688,13 @@ function CompactProjectRail({
     if (!workspaceActive) onLeaveActive?.();
     onTabChange(nextTab);
   };
+  const railTooltip = useRailTooltip();
 
   return (
     <nav
       aria-label={t("app.sidebar.projectShortcuts")}
       data-compact-project-rail
+      {...railTooltip.handlers}
       className="sidebar-glass relative flex h-full w-12 shrink-0 flex-col items-center"
     >
       {titleBarAbove ? null : (
@@ -2700,6 +2716,7 @@ function CompactProjectRail({
       >
         <CompactRailAction
           label={t("app.sidebar.expandProjects")}
+          tooltip={false}
           icon={PanelLeft}
           onClick={onTogglePanel}
         />
@@ -2759,16 +2776,32 @@ function CompactProjectRail({
             <CompactRailAction
               key={itemId}
               tab
-              label={itemId === "changes" ? changesLabel : tabLabel(itemId)}
+              label={
+                itemId === "changes"
+                  ? changesLabel
+                  : itemId === "sessions" && hasUnseenFinished
+                    ? t("app.sidebar.sessionsNewReplies")
+                    : tabLabel(itemId)
+              }
+              tipLabel={tabLabel(itemId)}
+              diff={
+                itemId === "changes"
+                  ? { additions: changeAdditions, deletions: changeDeletions }
+                  : undefined
+              }
               icon={COMPACT_TAB_ICONS[itemId]}
               active={workspaceActive && tabShown && activeTab === itemId}
-              dot={itemId === "changes" && hasChanges}
+              dot={
+                (itemId === "changes" && hasChanges) ||
+                (itemId === "sessions" && hasUnseenFinished)
+              }
               onClick={() => openWorkspaceTab(itemId)}
             />
           ))}
         </div>
         <CompactRailAction
-          label={t("app.sidebar.search", { shortcut: `${MOD}K` })}
+          label={t("app.sidebar.searchLabel")}
+          shortcut={`${MOD}K`}
           icon={Search}
           active={searchActive}
           onClick={action(searchActive, onSearch)}
@@ -2809,7 +2842,9 @@ function CompactProjectRail({
       <div className="min-h-2 flex-1" />
       <div className="flex w-full flex-col items-center gap-1 py-1.5">
         <CompactRailAction
-          label={t("app.sidebar.settingsShortcut", { shortcut: `${MOD},` })}
+          label={t("app.sidebar.settingsLabel")}
+          shortcut={`${MOD},`}
+          tooltip={false}
           icon={Settings}
           onClick={onOpenSettings}
         />
@@ -2825,6 +2860,7 @@ function CompactProjectRail({
           }}
         />
       ) : null}
+      {railTooltip.tooltip}
     </nav>
   );
 }
@@ -2851,7 +2887,12 @@ function CompactRailMono({
   return (
     <button
       type="button"
-      title={`${name}\n${MONO_STATUS_LABEL[status]}`}
+      data-rail-tip={name}
+      data-rail-tip-detail={
+        unseen
+          ? `${MONO_STATUS_LABEL[status]} · ${unreadLabel(unseen)}`
+          : MONO_STATUS_LABEL[status]
+      }
       aria-label={unseen ? `${label}, ${unreadLabel(unseen)}` : label}
       aria-current={active ? "true" : undefined}
       data-compact-rail-mono
@@ -2878,6 +2919,10 @@ function CompactRailMono({
 
 function CompactRailAction({
   label,
+  shortcut,
+  tooltip = true,
+  tipLabel = label,
+  diff,
   icon: Icon,
   tab = false,
   active = false,
@@ -2886,6 +2931,12 @@ function CompactRailAction({
   onOpenContextMenu,
 }: {
   label: string;
+  shortcut?: string;
+  tooltip?: boolean;
+  /** The tooltip's name, when the accessible label carries more. */
+  tipLabel?: string;
+  /** Colored +n -n beside the tooltip's name. */
+  diff?: { additions: number; deletions: number };
   icon: typeof PanelLeft;
   tab?: boolean;
   active?: boolean;
@@ -2897,8 +2948,15 @@ function CompactRailAction({
     <button
       type="button"
       role={tab ? "tab" : undefined}
-      title={label}
-      aria-label={label}
+      data-rail-tip={tooltip ? tipLabel : undefined}
+      data-rail-tip-detail={tooltip ? shortcut : undefined}
+      data-rail-tip-additions={
+        tooltip && diff?.additions ? diff.additions : undefined
+      }
+      data-rail-tip-deletions={
+        tooltip && diff?.deletions ? diff.deletions : undefined
+      }
+      aria-label={shortcut ? `${label} (${shortcut})` : label}
       aria-selected={tab ? active : undefined}
       aria-pressed={tab ? undefined : active}
       disabled={!onClick}
