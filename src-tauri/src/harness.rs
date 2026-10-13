@@ -1235,18 +1235,75 @@ fn copy_claude_transcript(
             target.display()
         )
     })?;
-    std::fs::copy(
-        project.join(&transcript_name),
-        target.join(&transcript_name),
-    )
-    .map_err(|error| format!("Could not copy the Claude transcript: {error}"))?;
+    // Config dirs may be symlinks into one another; copying a file onto itself
+    // would truncate it, so the same folder is already the transfer.
+    if same_directory(&project, &target) {
+        return Ok(true);
+    }
     let side_folder = project.join(session_id);
-    if side_folder.is_dir() {
-        copy_dir_all(&side_folder, &target.join(session_id))?;
+    let has_side_folder = side_folder.is_dir();
+    let staged_transcript = target.join(format!("{transcript_name}.partial"));
+    let staged_side_folder = target.join(format!("{session_id}.partial"));
+    // Stage every copy first, so a failure leaves the target's previous
+    // transcript and side folder untouched.
+    if let Err(error) = stage_claude_copies(
+        &project.join(&transcript_name),
+        &staged_transcript,
+        has_side_folder.then_some((&side_folder, &staged_side_folder)),
+    ) {
+        let _ = remove_path(&staged_transcript);
+        let _ = remove_path(&staged_side_folder);
+        return Err(error);
+    }
+    std::fs::rename(&staged_transcript, target.join(&transcript_name))
+        .map_err(|error| format!("Could not place the Claude transcript: {error}"))?;
+    if has_side_folder {
+        let live_side_folder = target.join(session_id);
+        remove_path(&live_side_folder)?;
+        std::fs::rename(&staged_side_folder, &live_side_folder)
+            .map_err(|error| format!("Could not place the Claude side folder: {error}"))?;
     }
     Ok(true)
 }
 
+/// Copy the transcript file, and the side folder when there is one, to their
+/// staging paths. Any error is returned for the caller to clean up.
+fn stage_claude_copies(
+    transcript: &Path,
+    staged_transcript: &Path,
+    side_folder: Option<(&Path, &Path)>,
+) -> Result<(), String> {
+    std::fs::copy(transcript, staged_transcript)
+        .map_err(|error| format!("Could not copy the Claude transcript: {error}"))?;
+    if let Some((from, to)) = side_folder {
+        remove_path(to)?;
+        copy_dir_all(from, to)?;
+    }
+    Ok(())
+}
+
+/// Whether both paths name the same existing directory, through any symlinks.
+fn same_directory(left: &Path, right: &Path) -> bool {
+    match (std::fs::canonicalize(left), std::fs::canonicalize(right)) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => false,
+    }
+}
+
+/// Remove a file or folder if it exists. Symlinks are removed, not followed.
+fn remove_path(path: &Path) -> Result<(), String> {
+    let Ok(metadata) = std::fs::symlink_metadata(path) else {
+        return Ok(());
+    };
+    let removed = if metadata.is_dir() {
+        std::fs::remove_dir_all(path)
+    } else {
+        std::fs::remove_file(path)
+    };
+    removed.map_err(|error| format!("Could not replace {}: {error}", path.display()))
+}
+
+/// Copy a folder tree recursively, creating `to` and its subfolders as needed.
 fn copy_dir_all(from: &Path, to: &Path) -> Result<(), String> {
     std::fs::create_dir_all(to).map_err(|error| error.to_string())?;
     for entry in std::fs::read_dir(from).map_err(|error| error.to_string())? {
@@ -1281,9 +1338,6 @@ pub async fn claude_transfer_transcript(
     tauri::async_runtime::spawn_blocking(move || {
         let from = claude_config_dir(&app, from_account_id.as_deref())?;
         let to = claude_config_dir(&app, to_account_id.as_deref())?;
-        if from == to {
-            return Ok(true);
-        }
         copy_claude_transcript(&from, &to, &session_id)
     })
     .await
@@ -4385,5 +4439,48 @@ mod claude_transfer_tests {
         assert!(!copy_claude_transcript(&from, &to, "sess_missing").unwrap());
         let _ = std::fs::remove_dir_all(&from);
         let _ = std::fs::remove_dir_all(&to);
+    }
+
+    #[test]
+    fn replaces_an_earlier_copy_and_leaves_no_staging_files() {
+        let from = tmp_dir("transfer-replace");
+        let to = tmp_dir("transfer-replace-to");
+        let project = from.join("projects").join("-repo");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(project.join("sess_1.jsonl"), "new").unwrap();
+        let earlier = to.join("projects").join("-repo");
+        std::fs::create_dir_all(&earlier).unwrap();
+        std::fs::write(earlier.join("sess_1.jsonl"), "old").unwrap();
+
+        assert!(copy_claude_transcript(&from, &to, "sess_1").unwrap());
+
+        assert_eq!(
+            std::fs::read_to_string(earlier.join("sess_1.jsonl")).unwrap(),
+            "new"
+        );
+        assert!(!earlier.join("sess_1.jsonl.partial").exists());
+        let _ = std::fs::remove_dir_all(&from);
+        let _ = std::fs::remove_dir_all(&to);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_config_dirs_do_not_copy_the_transcript_onto_itself() {
+        let real = tmp_dir("transfer-symlink-real");
+        let link_parent = tmp_dir("transfer-symlink-link");
+        let link = link_parent.join("config");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let project = real.join("projects").join("-repo");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(project.join("sess_1.jsonl"), "keep me").unwrap();
+
+        assert!(copy_claude_transcript(&link, &real, "sess_1").unwrap());
+
+        assert_eq!(
+            std::fs::read_to_string(project.join("sess_1.jsonl")).unwrap(),
+            "keep me"
+        );
+        let _ = std::fs::remove_dir_all(&real);
+        let _ = std::fs::remove_dir_all(&link_parent);
     }
 }
